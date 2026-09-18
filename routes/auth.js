@@ -12,9 +12,15 @@ const transporter = nodemailer.createTransport({
     auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS
+    },
+    tls: {
+        rejectUnauthorized: false
     }
 });
 
+// ==========================
+// SEND OTP (REGISTER)
+// ==========================
 router.post("/send-otp", async (req, res) => {
     try {
         const { email } = req.body;
@@ -45,34 +51,21 @@ router.post("/send-otp", async (req, res) => {
 
         await supabase
             .from("otp_codes")
-            .insert([
-                {
-                    email,
-                    otp
-                }
-            ]);
+            .insert([{ email, otp }]);
 
-        console.log("Generated OTP:", otp);
-console.log("EMAIL_USER:", process.env.EMAIL_USER);
-console.log("EMAIL_PASS exists:", !!process.env.EMAIL_PASS);
-        try {
-    await transporter.sendMail({
-        from: process.env.EMAIL_USER,
-        to: email,
-        subject: "TechBox Verification Code",
-        html: `
-            <h2>TechBox Email Verification</h2>
-            <p>Your OTP is:</p>
-            <h1>${otp}</h1>
-            <p>This code is required to complete your signup.</p>
-        `
-    });
-
-    console.log("Email sent successfully");
-} catch (mailError) {
-    console.error("MAIL ERROR:", mailError);
-    throw mailError;
-}
+        await transporter.sendMail({
+            from: `"TechBox" <${process.env.EMAIL_USER}>`,
+            to: email,
+            subject: "TechBox Verification Code",
+            html: `
+                <div style="font-family: Arial, sans-serif;">
+                    <h2>TechBox Verification</h2>
+                    <p>Your verification code is:</p>
+                    <h1>${otp}</h1>
+                    <p>This code expires in 10 minutes.</p>
+                </div>
+            `
+        });
 
         res.json({
             success: true,
@@ -89,6 +82,9 @@ console.log("EMAIL_PASS exists:", !!process.env.EMAIL_PASS);
     }
 });
 
+// ==========================
+// VERIFY OTP + REGISTER
+// ==========================
 router.post("/verify-otp", async (req, res) => {
     try {
         const { name, email, password, otp } = req.body;
@@ -106,7 +102,7 @@ router.post("/verify-otp", async (req, res) => {
             .eq("email", email)
             .eq("otp", otp)
             .single();
-         
+
         if (!otpRecord) {
             return res.status(400).json({
                 success: false,
@@ -114,16 +110,19 @@ router.post("/verify-otp", async (req, res) => {
             });
         }
 
-        const otpTime = new Date(otpRecord.created_at).getTime();
-        const currentTime = Date.now();
+        const otpTime = new Date(
+            otpRecord.created_at
+        ).getTime();
 
-        const diffMinutes = (currentTime - otpTime) / (1000 * 60);
+        const diffMinutes =
+            (Date.now() - otpTime) /
+            (1000 * 60);
 
         if (diffMinutes > 10) {
             await supabase
-            .from("otp_codes")
-            .delete()
-            .eq("email", email);
+                .from("otp_codes")
+                .delete()
+                .eq("email", email);
 
             return res.status(400).json({
                 success: false,
@@ -131,19 +130,21 @@ router.post("/verify-otp", async (req, res) => {
             });
         }
 
-        const hashedPassword = await bcrypt.hash(password, 10);
+        const hashedPassword =
+            await bcrypt.hash(password, 10);
 
-        const { data: user, error: userError } = await supabase
-            .from("users")
-            .insert([
-                {
-                    name,
-                    email,
-                    password: hashedPassword
-                }
-            ])
-            .select()
-            .single();
+        const { data: user, error: userError } =
+            await supabase
+                .from("users")
+                .insert([
+                    {
+                        name,
+                        email,
+                        password: hashedPassword
+                    }
+                ])
+                .select()
+                .single();
 
         if (userError) {
             return res.status(400).json({
@@ -189,6 +190,9 @@ router.post("/verify-otp", async (req, res) => {
     }
 });
 
+// ==========================
+// LOGIN
+// ==========================
 router.post("/login", async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -257,6 +261,158 @@ router.post("/login", async (req, res) => {
     }
 });
 
+// ==========================
+// FORGOT PASSWORD SEND OTP
+// ==========================
+router.post("/forgot-password/send-otp", async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        const { data: user } = await supabase
+            .from("users")
+            .select("*")
+            .eq("email", email)
+            .single();
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+        }
+
+        const otp = Math.floor(
+            100000 + Math.random() * 900000
+        ).toString();
+
+        await supabase
+            .from("otp_codes")
+            .insert([{ email, otp }]);
+
+        await transporter.sendMail({
+            from: `"TechBox" <${process.env.EMAIL_USER}>`,
+            to: email,
+            subject: "TechBox Password Reset Code",
+            html: `
+                <h2>Password Reset</h2>
+                <p>Your OTP is:</p>
+                <h1>${otp}</h1>
+                <p>Valid for 10 minutes.</p>
+            `
+        });
+
+        res.json({
+            success: true,
+            message: "Reset OTP sent successfully"
+        });
+
+    } catch (error) {
+        console.error(error);
+
+        res.status(500).json({
+            success: false,
+            message: "Server Error"
+        });
+    }
+});
+
+// ==========================
+// FORGOT PASSWORD VERIFY OTP
+// ==========================
+router.post("/forgot-password/verify-otp", async (req, res) => {
+    try {
+        const { email, otp } = req.body;
+
+        const { data: otpRecord } = await supabase
+            .from("otp_codes")
+            .select("*")
+            .eq("email", email)
+            .eq("otp", otp)
+            .single();
+
+        if (!otpRecord) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid OTP"
+            });
+        }
+
+        res.json({
+            success: true,
+            message: "OTP verified successfully"
+        });
+
+    } catch (error) {
+        console.error(error);
+
+        res.status(500).json({
+            success: false,
+            message: "Server Error"
+        });
+    }
+});
+
+// ==========================
+// RESET PASSWORD
+// ==========================
+router.post("/forgot-password/reset-password", async (req, res) => {
+    try {
+        const { email, otp, newPassword } = req.body;
+
+        const { data: otpRecord } = await supabase
+            .from("otp_codes")
+            .select("*")
+            .eq("email", email)
+            .eq("otp", otp)
+            .single();
+
+        if (!otpRecord) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid OTP"
+            });
+        }
+
+        const hashedPassword =
+            await bcrypt.hash(newPassword, 10);
+
+        const { error } = await supabase
+            .from("users")
+            .update({
+                password: hashedPassword
+            })
+            .eq("email", email);
+
+        if (error) {
+            return res.status(400).json({
+                success: false,
+                message: error.message
+            });
+        }
+
+        await supabase
+            .from("otp_codes")
+            .delete()
+            .eq("email", email);
+
+        res.json({
+            success: true,
+            message: "Password updated successfully"
+        });
+
+    } catch (error) {
+        console.error(error);
+
+        res.status(500).json({
+            success: false,
+            message: "Server Error"
+        });
+    }
+});
+
+// ==========================
+// CURRENT USER
+// ==========================
 router.get("/me", authMiddleware, async (req, res) => {
     res.json({
         success: true,
