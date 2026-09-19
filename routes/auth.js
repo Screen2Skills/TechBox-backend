@@ -51,7 +51,9 @@ router.post("/send-otp", async (req, res) => {
         await supabase
             .from("otp_codes")
             .insert([{ email, otp }]);
+console.log("OTP generated");
 
+console.log("Before sendMail");
         await transporter.sendMail({
             from: `"TechBox" <${process.env.EMAIL_USER}>`,
             to: email,
@@ -65,7 +67,7 @@ router.post("/send-otp", async (req, res) => {
                 </div>
             `
         });
-
+ console.log("After sendMail");
         res.json({
             success: true,
             message: "OTP sent successfully"
