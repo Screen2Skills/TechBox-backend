@@ -3,19 +3,11 @@ const jwt = require("jsonwebtoken");
 const supabase = require("../config/supabase");
 const express = require("express");
 const authMiddleware = require("../middleware/authMiddleware");
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
 
 const router = express.Router();
 
-const transporter = nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 587,
-    secure: false,
-    auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-    }
-});
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // ==========================
 // SEND OTP (REGISTER)
@@ -53,21 +45,32 @@ router.post("/send-otp", async (req, res) => {
             .insert([{ email, otp }]);
 console.log("OTP generated");
 
-console.log("Before sendMail");
-        await transporter.sendMail({
-            from: `"TechBox" <${process.env.EMAIL_USER}>`,
-            to: email,
-            subject: "TechBox Verification Code",
-            html: `
-                <div style="font-family: Arial, sans-serif;">
-                    <h2>TechBox Verification</h2>
-                    <p>Your verification code is:</p>
-                    <h1>${otp}</h1>
-                    <p>This code expires in 10 minutes.</p>
-                </div>
-            `
-        });
- console.log("After sendMail");
+console.log("Before Resend");
+
+const { error: emailError } = await resend.emails.send({
+    from: "onboarding@resend.dev",
+    to: email,
+    subject: "TechBox Verification Code",
+    html: `
+        <div style="font-family: Arial, sans-serif;">
+            <h2>TechBox Verification</h2>
+            <p>Your verification code is:</p>
+            <h1>${otp}</h1>
+            <p>This code expires in 10 minutes.</p>
+        </div>
+    `
+});
+
+if (emailError) {
+    console.error(emailError);
+
+    return res.status(500).json({
+        success: false,
+        message: "Failed to send OTP email"
+    });
+}
+
+console.log("After Resend");
         res.json({
             success: true,
             message: "OTP sent successfully"
@@ -290,17 +293,27 @@ router.post("/forgot-password/send-otp", async (req, res) => {
             .from("otp_codes")
             .insert([{ email, otp }]);
 
-        await transporter.sendMail({
-            from: `"TechBox" <${process.env.EMAIL_USER}>`,
-            to: email,
-            subject: "TechBox Password Reset Code",
-            html: `
-                <h2>Password Reset</h2>
-                <p>Your OTP is:</p>
-                <h1>${otp}</h1>
-                <p>Valid for 10 minutes.</p>
-            `
-        });
+        const { error: emailError } = await resend.emails.send({
+    from: "onboarding@resend.dev",
+    to: email,
+    subject: "TechBox Password Reset Code",
+    html: `
+        <h2>Password Reset</h2>
+        <p>Your OTP is:</p>
+        <h1>${otp}</h1>
+        <p>Valid for 10 minutes.</p>
+    `
+});
+
+if (emailError) {
+    console.error(emailError);
+
+    return res.status(500).json({
+        success: false,
+        message: "Failed to send reset OTP"
+    });
+}
+}
 
         res.json({
             success: true,
