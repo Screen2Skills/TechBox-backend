@@ -313,7 +313,6 @@ if (emailError) {
         message: "Failed to send reset OTP"
     });
 }
-}
 
         res.json({
             success: true,
