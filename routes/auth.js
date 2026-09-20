@@ -99,7 +99,19 @@ router.post("/verify-otp", async (req, res) => {
                 message: "All fields are required"
             });
         }
+const { data: existingUser } =
+await supabase
+    .from("users")
+    .select("*")
+    .eq("email", email)
+    .maybeSingle();
 
+if(existingUser){
+    return res.status(400).json({
+        success:false,
+        message:"Account already exists"
+    });
+}
         const { data: otpRecord } = await supabase
             .from("otp_codes")
             .select("*")
@@ -163,15 +175,17 @@ router.post("/verify-otp", async (req, res) => {
             .eq("email", email);
 
         const token = jwt.sign(
-            {
-                id: user.id,
-                email: user.email
-            },
-            process.env.JWT_SECRET,
-            {
-                expiresIn: "7d"
-            }
-        );
+    {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role
+    },
+    process.env.JWT_SECRET,
+    {
+        expiresIn: "7d"
+    }
+);
 
         res.json({
             success: true,
@@ -233,14 +247,15 @@ router.post("/login", async (req, res) => {
             });
         }
 
-        const token = jwt.sign(
-    {
-        id: user.id,
-        email: user.email,
-        role: user.role
-    },
-    process.env.JWT_SECRET,
-    { expiresIn: "7d" }
+  const token = jwt.sign(
+{
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role
+},
+process.env.JWT_SECRET,
+{ expiresIn: "7d" }
 );
 
         res.json({
